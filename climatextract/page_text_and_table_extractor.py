@@ -1,29 +1,27 @@
 """Handles extraction of text and tables from PDF pages"""
-import html
-import os
 import csv
-import re
-from typing import Dict, List, Tuple
+import os
 
+import pandas as pd
 import torch
-from pdf2image import convert_from_path
-from transformers import DetrImageProcessor
-from transformers import TableTransformerForObjectDetection
 from docling.document_converter import DocumentConverter
+from pdf2image import convert_from_path
+from transformers import DetrImageProcessor, TableTransformerForObjectDetection
 
 from climatextract.semantic_search import Page
+
 
 class PageTextAndTableExtractor:
     """Handles extraction of text and tables from PDF pages
     Consolidates all table extraction functionality (also methods previously in table_helper.py)
     """
-    
+
     def __init__(self):
         """Initialize the extractor"""
         pass
-    
 
-    async def extract_text_and_tables_from_pages(self, relevant_pages: List[Page], filename: str) -> Tuple[List[str], int]:
+
+    async def extract_text_and_tables_from_pages(self, relevant_pages: list[Page], filename: str) -> tuple[list[str], int]:
         """Extract both text and tables from relevant pages.
 
         Returns:
@@ -36,7 +34,8 @@ class PageTextAndTableExtractor:
             return ([''.join(str(x) for x in relevant_tables[idx]) + ' ' +  page.page_content for idx, page in enumerate(relevant_pages)], num_tables)
         else:
             return ([page.page_content for page in relevant_pages], 0)
-        
+
+
     def get_tables_for_relevant_pages(self, relevant_pages, filename):
         """Extract tables from relevant pages and return them with the filtered relevant pages."""
         relevant_page_numbers = [
@@ -49,7 +48,7 @@ class PageTextAndTableExtractor:
             relevant_pages, extracted_tables)
 
         return tables
-    
+
     def match_relevant_pages_and_tables(self, relevant_pages, extracted_tables):
         """Match relevant pages with extracted tables."""
         tables_padded = []
@@ -60,13 +59,12 @@ class PageTextAndTableExtractor:
             else:
                 tables_padded.append([])
         return tables_padded
-    
-    
 
-    def extract_tables_from_pages(self, file_name: str, rel_page_numbers: List[int]) -> Dict[int, list]:
+
+    def extract_tables_from_pages(self, file_name: str, rel_page_numbers: list[int]) -> dict[int, list]:
         """
         Extract tables from the specified pages of the PDF file,
-        either by reading in already extracted tables or by extracting them from the PDF file, 
+        either by reading in already extracted tables or by extracting them from the PDF file,
         checking if the page contains a table first.
         """
         tables = {}
@@ -75,7 +73,7 @@ class PageTextAndTableExtractor:
             path_to_table_cells = f'./data/processed/tables/{report_name}_{page}_table_cells.csv'
             # In case table has already been extracted from the page
             if os.path.exists(path_to_table_cells):
-                with open(path_to_table_cells, 'r', encoding='utf-8') as f:
+                with open(path_to_table_cells, encoding='utf-8') as f:
                     table = list(csv.reader(f, delimiter=","))
                 tables[page] = table
             # In case table has not been extracted from the page
@@ -83,7 +81,7 @@ class PageTextAndTableExtractor:
                 # Check whether the page contains a table
                 if self.check_if_table_on_page(file_name, page):
                     table_extracted = self.extract_table_from_page(file_name, page)
-                    table_cleaned = self.clean_table(table_extracted)
+                    table_cleaned = self.header_value_pairs(table_extracted)
                     self.save_table(path_to_table_cells, table_cleaned)
                     tables[page] = table_cleaned
 
@@ -118,82 +116,24 @@ class PageTextAndTableExtractor:
             return False
 
 
-    def extract_table_from_page(self, file_name: str, page: int) -> list:
-        """Extracts the table from the filename on the specified page"""
+    def extract_table_from_page(self, file_name: str, page: int) -> list[pd.DataFrame]:
+        """Extracts every table in the document, converting the file once."""
         converter = DocumentConverter()
-        doc = converter.convert(source=file_name, page_range=(
-            page, page))
-        data = doc.document.export_to_markdown()
-        data = html.unescape(data)
-        data = data.replace('-', '')
-        data = data.replace('  ', '')
-        data_reformatted = [i.split('|')
-                            for i in data.split('\n') if len(i.strip()) > 0]
-        return data_reformatted
+        result = converter.convert(source=file_name, page_range=(page, page))
+        doc = result.document
+        dfs = [table.export_to_dataframe(doc=doc) for table in doc.tables]
+
+        return dfs
 
 
-    def clean_table(self, table: list) -> list:
-        """Performs string manipulations to clean markdown table"""
+    def header_value_pairs(self, dfs: list) -> list[tuple]:
+        """Converts each DataFrame's rows to tuples."""
         result = []
-        counter_row = 0
-        counter_col = 0
-        filter_data = []
-        max_length = max(map(len, table))
-        for i in table:
-
-            if len(i) >= max_length/2:
-                transform_i = []
-                for x in i:
-                    if re.match(r"^\ ?[2][0][0-9]{2}\ *$", x):
-                        transform_i.append(x)
-                    else:
-                        x = x.replace(",", "")
-                        x = x.replace("n/a", "")
-                        x = x.replace("N/A", "")
-                        x = x.replace("\n", " ")
-                        x = x.replace("<", "")
-                        x = x.replace(">", "")
-                        x = x.replace("=", "")
-
-                        if x[-1:].isspace():
-                            x = x[:-1]
-
-                        if re.match(r"\ *[+-]?(?:\d+(?:\.\d+)?|\.\d+)$", x):
-                            x = float(x)
-                        elif re.match(r"^[A-Za-z0-9\)\('\"\\s]+[0-9a-z\)][\d+]$", x):
-                            x = x[:-1]
-                            if re.match(r"^[A-Za-z0-9\)\('\"\\s]+[0-9a-z\)][\d+]$", x):
-                                x = x[:-1]
-                        elif re.match(r"^[0-9.\s]+[0-9.]$", x):
-                            x = ""
-                        transform_i.append(x)
-                filter_data.append(transform_i)
-
-        for idx_i, i in enumerate(filter_data):
-            for idx_j, j in enumerate(i):
-                if isinstance(j, float):
-                    for a in range(idx_j, -1, -1):
-                        if isinstance(i[a], str) and len(i[a]) > 3:
-                            row_name = i[a]
-                            counter_row = 1
-                            break
-                        else:
-                            pass
-
-                    for b in range(idx_i, -1, -1):
-                        if len(filter_data[b]) <= idx_j:
-                            continue
-                        col_candidate = filter_data[b][idx_j]
-                        if isinstance(col_candidate, str) and len(col_candidate) > 3:
-                            col_name = col_candidate
-                            counter_col = 1
-                            break
-
-                    if counter_row == 1 and counter_col == 1:
-                        result.append((row_name, col_name, j))
-                        counter_row = 0
-                        counter_col = 0
-
+        for df in dfs:
+            for row in df.to_dict(orient="records"):
+                result.append(
+                    tuple(f"{col}: {value}" for col, value in row.items() if pd.notnull(value) and value != "")
+                )
         return result
 
 

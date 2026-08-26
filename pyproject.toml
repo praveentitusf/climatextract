@@ -46,3 +46,12 @@ include = ["climatextract*"]
 
 [tool.setuptools.package-data]
 climatextract = ["data/*.csv"]
+
+# ruff for python script formatting
+[tool.ruff]
+target-version = "py314"
+line-length = 88          # unused since E501 is ignored, but ruff wants a value; harmless either way
+
+[tool.ruff.lint]
+select = ["E", "W", "N", "I", "F", "B", "UP"]
+ignore = ["E501"]
