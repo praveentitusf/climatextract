@@ -16,7 +16,7 @@ import mlflow
 import nest_asyncio
 
 # Apply nest_asyncio to allow asyncio.run() in environments with running event loops (e.g., Jupyter)
-nest_asyncio.apply()
+# nest_asyncio.apply()
 
 from climatextract.pipeline import FileConfig, ValueRetrieverPipeline, save_results
 from climatextract.experiment_setup import Experiment
