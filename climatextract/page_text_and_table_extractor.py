@@ -139,6 +139,7 @@ class PageTextAndTableExtractor:
 
     def save_table(self, path_to_table_cells: str, table: list):
         """Save the table to a CSV file"""
+        os.makedirs(os.path.dirname(path_to_table_cells), exist_ok=True)
         with open(path_to_table_cells, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
             writer.writerows(table)
