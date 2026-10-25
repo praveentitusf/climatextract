@@ -18,7 +18,13 @@ class PageTextAndTableExtractor:
 
     def __init__(self):
         """Initialize the extractor"""
-        pass
+        # Models load lazily on the first convert() and are then reused across pages
+        self.converter = DocumentConverter()
+        # Table detection model, loaded once and reused for every page
+        self.table_detection_processor = DetrImageProcessor.from_pretrained(
+            "microsoft/table-transformer-detection")
+        self.table_detection_model = TableTransformerForObjectDetection.from_pretrained(
+            "microsoft/table-transformer-detection")
 
 
     async def extract_text_and_tables_from_pages(self, relevant_pages: list[Page], filename: str) -> tuple[list[str], int]:
@@ -90,10 +96,8 @@ class PageTextAndTableExtractor:
 
     def check_if_table_on_page(self, file_name: str, relevant_page: int) -> bool:
         '''Check if the page contains a table'''
-        processor = DetrImageProcessor.from_pretrained(
-            "microsoft/table-transformer-detection")
-        model = TableTransformerForObjectDetection.from_pretrained(
-            "microsoft/table-transformer-detection")
+        processor = self.table_detection_processor
+        model = self.table_detection_model
 
         image = convert_from_path(
             file_name, first_page=relevant_page, last_page=relevant_page, fmt='jpeg')[0]
@@ -118,8 +122,7 @@ class PageTextAndTableExtractor:
 
     def extract_table_from_page(self, file_name: str, page: int) -> list[pd.DataFrame]:
         """Extracts every table in the document, converting the file once."""
-        converter = DocumentConverter()
-        result = converter.convert(source=file_name, page_range=(page, page))
+        result = self.converter.convert(source=file_name, page_range=(page, page))
         doc = result.document
         dfs = [table.export_to_dataframe(doc=doc) for table in doc.tables]
 
