@@ -130,10 +130,10 @@ class PageTextAndTableExtractor:
         """Converts each DataFrame's rows to tuples."""
         result = []
         for df in dfs:
-            for row in df.to_dict(orient="records"):
+            for row in df.itertuples(index=False, name=None):
                 result.append(
-                    tuple(f"{col}: {value}" for col, value in row.items() if pd.notnull(value) and value != "")
-                )
+                    tuple(f"{col}: {value}" for col, value in zip(df.columns, row)
+                          if pd.notnull(value) and value != ""))
         return result
 
 
